@@ -1,0 +1,114 @@
+version: '3.9'
+
+x-logging:
+  &default-logging
+  driver: "json-file"
+  options:
+    max-size: "1m"
+    max-file: "1"
+    tag: "{{.Name}}"
+    
+services:
+  app:
+    image: swarmpit/swarmpit:latest
+    environment:
+      - SWARMPIT_DB=http://db:5984
+      - SWARMPIT_INFLUXDB=http://influxdb:8086
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - 888:8080
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    networks:
+      - swarmpit
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 1024M
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+      placement:
+        constraints:
+          - node.role == manager
+    logging: *default-logging
+
+  db:
+    image: couchdb:2.3.1
+    # environment:
+      # - COUCHDB_USER=admin
+      # - COUCHDB_PASSWORD=admin123
+    volumes:
+      # - $PWD/db-data:/opt/couchdb/data
+      - /mnt/glusterfs/swarmpit/db-data:/opt/couchdb/data
+    networks:
+      - swarmpit
+    deploy:
+      placement:
+        constraints: 
+          - node.labels.WIRED == YES
+      resources:
+        limits:
+          cpus: '0.30'
+          memory: 256M
+        reservations:
+          cpus: '0.15'
+          memory: 128M
+    logging: *default-logging
+
+  influxdb:
+    image: influxdb:1.8.10
+    volumes:
+      # - $PWD/influx-data:/var/lib/influxdb
+      - /mnt/glusterfs/swarmpit/influx-data:/var/lib/influxdb
+    networks:
+      - swarmpit
+    deploy:
+      placement:
+        constraints: 
+          - node.labels.WIRED == YES
+      resources:
+        limits:
+          cpus: '0.60'
+          memory: 512M
+        reservations:
+          cpus: '0.30'
+          memory: 128M
+    logging: *default-logging
+
+  agent:
+    image: swarmpit/agent:latest
+    environment:
+      - DOCKER_API_VERSION=1.43
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - swarmpit
+    deploy:
+      mode: global
+      labels:
+        swarmpit.agent: 'true'
+      resources:
+        limits:
+          cpus: '0.10'
+          memory: 64M
+        reservations:
+          cpus: '0.05'
+          memory: 32M
+    logging: *default-logging
+
+
+networks:
+  swarmpit:
+    driver: overlay
+
+# volumes:
+#   db-data:
+#     driver: local
+#   influx-data:
+#     driver: local
